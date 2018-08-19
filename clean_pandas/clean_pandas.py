@@ -1,11 +1,11 @@
-from typing import Dict, Union, Any
-from datetime import datetime
+from typing import Dict, Union, Any, List
 
 import pandas as pd
 import numpy
 
 from cryptography.fernet import Fernet
 from faker import Faker
+import scrubadub
 
 
 class UnknownCleanType(Exception):
@@ -69,6 +69,23 @@ class CleanPandas:
         else:
             return dtype(truncate_value)
 
+    def _scrubabdub(self, value: Any) -> str:
+        """
+        Take a given value, cast to string, and apply the Scrubadub clean method. Returns original value if
+        cast to string raises a ValueError
+
+        Args:
+            value: Incoming value from Pandas Series
+
+        Returns:
+            String from Scrubadub clean method
+        """
+        try:
+            str_value = str(value)
+        except ValueError:
+            return value
+        return scrubadub.clean(str_value)
+
     def _create_unique_value_dict(self, column_name: str,
                                   clean_type: str,
                                   faker_type: str,
@@ -78,7 +95,7 @@ class CleanPandas:
         Take the unique values in a series and perform the desired cleaning operations
 
         Args:
-            clean_type: String indicating 'encrypt', 'replace', 'truncate'
+            clean_type: String indicating 'encrypt', 'replace', 'truncate', 'scrubadub'
             faker_type: String indicating faker provider to use
             trunc_length: Used if clean_type is 'truncate', indicates how many characters to remove
             trunc_from_end: Truncate from the end, will truncate from the start if False
@@ -96,8 +113,11 @@ class CleanPandas:
             elif clean_type == 'truncate':
                 new_value = self._truncate_value(value, self._pd_obj[column_name].dtype.type,
                                             trunc_length, trunc_from_end)
+            elif clean_type == 'scrubadub':
+                new_value = self._scrubabdub(value)
             else:
-                raise UnknownCleanType("Clean type must be 'encrypt', 'faker', or 'truncate'")
+                print(clean_type)
+                raise UnknownCleanType("Clean type must be 'encrypt', 'scrubadub', 'faker', or 'truncate'")
 
             replacement_xwalk_dict[value] = new_value
 
@@ -111,7 +131,7 @@ class CleanPandas:
 
         Args:
             series_name: Pandas series name
-            clean_type: 'encrypt', 'faker', 'truncate' are the options
+            clean_type: 'encrypt', scrubadub', 'faker', 'truncate' are the options
             faker_type: Faker provider type to use
             trunc_length: Length of characters to truncate
             trunc_from_end: Boolean that indicates if truncation should start from the end, defaults to True
@@ -119,6 +139,27 @@ class CleanPandas:
         Returns:
             Returns new Series with updated values
         """
-        value_dict = self._create_unique_value_dict(series_name, faker_type, clean_type, trunc_length, trunc_from_end)
+        value_dict = self._create_unique_value_dict(series_name, clean_type, faker_type, trunc_length, trunc_from_end)
         new_series = self._pd_obj[series_name].replace(value_dict)
         return new_series
+
+    def clean_dataframe(self, list_of_clean_series_dicts: List[Dict[str, Union[str, int, bool, None]]]) -> pd.DataFrame:
+        """
+        Convenience method that, given a list of dictionaries representing the parameters for clean series,
+        this method will call clean_series with the given parameters
+
+        Args:
+            list_of_clean_series_dicts: List of dictionaries with the params that can be unpacked into clean_series
+
+        Returns:
+            Pandas DataFrame with the cleaned series values
+        """
+        clean_pd_obj = self._pd_obj.copy()
+
+        for params_dict in list_of_clean_series_dicts:
+            try:
+                clean_pd_obj[params_dict['series_name']] = self.clean_series(**params_dict)
+            except (KeyError, UnknownCleanType):
+                continue
+
+        return clean_pd_obj
