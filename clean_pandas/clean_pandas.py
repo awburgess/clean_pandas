@@ -1,10 +1,13 @@
-from typing import Dict, Union, Any, List
+from typing import Dict, Union, Any, List, NoReturn
+import webbrowser
+import warnings
 
 import pandas as pd
 import numpy
 
 from cryptography.fernet import Fernet
 from faker import Faker
+from faker.providers import BaseProvider
 import scrubadub
 
 
@@ -20,6 +23,16 @@ class CleanPandas:
         self._key = Fernet.generate_key()
         self._fernet = Fernet(self._key)
         self._faker = Faker()
+
+    @staticmethod
+    def get_faker_types() -> NoReturn:  # pragma: no cover
+        """
+        Opens the web page for Faker Providers
+
+        Returns:
+            None
+        """
+        webbrowser.open('https://faker.readthedocs.io/en/latest/providers.html')
 
     def _encrypt_value(self, value: Any) -> bytes:
         """
@@ -50,29 +63,40 @@ class CleanPandas:
                         trunc_length: int,
                         trunc_from_end: bool) -> Any:
         """
-        Truncates a given value given a truncation length and direction from which to truncate
+        Truncates a given value given a truncation length
+        and direction from which to truncate
 
         Args:
             value: Incoming value from Pandas Series
             dtype: Numpy object type
             trunc_length: Length of characters to truncate
-            trunc_from_end: Boolean indicating whether to truncate from end of value or start
+            trunc_from_end: Boolean indicating whether to truncate from
+            end of value or start
 
         Returns:
             A truncated value
         """
-        trunc_index = len(value) - trunc_length
-        truncate_value = str(value)[:trunc_index] if trunc_from_end else str(value)[trunc_index:]
+        string_value = str(value)
+        trunc_index = len(string_value) - trunc_length
+        if abs(trunc_index) > len(string_value):
+            warnings.warn('Truncation exceeds character length, '
+                          'will return None')
+        truncate_value = string_value[:trunc_index] if trunc_from_end \
+            else string_value[-trunc_index:]
 
         if dtype in [numpy.datetime64, numpy.object, numpy.object_]:
             return truncate_value
         else:
-            return dtype(truncate_value)
+            try:
+                return dtype(truncate_value)
+            except ValueError:  # Value is truncated beyond length
+                return None
 
     def _scrubabdub(self, value: Any) -> str:
         """
-        Take a given value, cast to string, and apply the Scrubadub clean method. Returns original value if
-        cast to string raises a ValueError
+        Take a given value, cast to string, and apply the Scrubadub
+        clean method. Returns original value if cast to string
+        raises a ValueError
 
         Args:
             value: Incoming value from Pandas Series
@@ -92,16 +116,21 @@ class CleanPandas:
                                   trunc_length: int = 0,
                                   trunc_from_end=True) -> Dict[Any, Any]:
         """
-        Take the unique values in a series and perform the desired cleaning operations
+        Take the unique values in a series and perform the desired cleaning
+        operations
 
         Args:
-            clean_type: String indicating 'encrypt', 'replace', 'truncate', 'scrubadub'
+            clean_type: String indicating 'encrypt', 'replace', 'truncate',
+                        'scrubadub'
             faker_type: String indicating faker provider to use
-            trunc_length: Used if clean_type is 'truncate', indicates how many characters to remove
-            trunc_from_end: Truncate from the end, will truncate from the start if False
+            trunc_length: Used if clean_type is 'truncate', indicates how many
+                          characters to remove
+            trunc_from_end: Truncate from the end, will truncate from the start
+                            if False
 
         Returns:
-            Dictionary with unique values as keys and replacement values as dictionary values
+            Dictionary with unique values as keys and replacement values as
+            dictionary values
         """
         replacement_xwalk_dict = {}
 
@@ -111,45 +140,86 @@ class CleanPandas:
             elif clean_type == 'faker':
                 new_value = self._fake_value(faker_type)
             elif clean_type == 'truncate':
-                new_value = self._truncate_value(value, self._pd_obj[column_name].dtype.type,
-                                            trunc_length, trunc_from_end)
+                new_value = self._truncate_value(
+                    value,
+                    self._pd_obj[column_name].dtype.type,
+                    trunc_length, trunc_from_end)
             elif clean_type == 'scrubadub':
                 new_value = self._scrubabdub(value)
             else:
                 print(clean_type)
-                raise UnknownCleanType("Clean type must be 'encrypt', 'scrubadub', 'faker', or 'truncate'")
+                raise UnknownCleanType("Clean type must be 'encrypt', "
+                                       "'scrubadub', 'faker', or 'truncate'")
 
             replacement_xwalk_dict[value] = new_value
 
         return replacement_xwalk_dict
 
-    def clean_series(self, series_name: str, clean_type: str = 'encrypt', faker_type: Union[str, None] = None,
-                     trunc_length: int=0, trunc_from_end: bool = True) -> pd.Series:
+    def serialize_encryption_key(self,
+                                 outpath: str) -> NoReturn:  # pragma: no cover
         """
-        Takes the unique values in a given series, applies the clean_type and replaces all values in the
+
+        Args:
+            outpath: String representation of path for serialization
+
+        Returns:
+            None
+        """
+        with open(outpath, 'wb') as outfile:
+            outfile.write(self._key)
+
+    def add_faker_provider(self, provider_object: BaseProvider) -> NoReturn:
+        """
+        Add a faker provider object for use in Clean Pandas accessor
+
+        Args:
+            provider_object: Provider object as detailed on
+            Faker (https://faker.readthedocs.io/en/latest/#how-to-create-a-provider)
+
+        Returns:
+            None
+        """
+        self._faker.add_provider(provider_object)  # pragma: no cover
+
+    def clean_series(self, series_name: str, clean_type: str = 'encrypt',
+                     faker_type: Union[str, None] = None,
+                     trunc_length: int=0,
+                     trunc_from_end: bool = True) -> pd.Series:
+        """
+        Takes the unique values in a given series, applies the clean_type
+        and replaces all values in the
         given series with the new "clean" values
 
         Args:
             series_name: Pandas series name
-            clean_type: 'encrypt', scrubadub', 'faker', 'truncate' are the options
+            clean_type: 'encrypt', scrubadub', 'faker', 'truncate' are options
             faker_type: Faker provider type to use
             trunc_length: Length of characters to truncate
-            trunc_from_end: Boolean that indicates if truncation should start from the end, defaults to True
+            trunc_from_end: Boolean that indicates if truncation should start
+                            from the end, defaults to True
 
         Returns:
             Returns new Series with updated values
         """
-        value_dict = self._create_unique_value_dict(series_name, clean_type, faker_type, trunc_length, trunc_from_end)
+        value_dict = self._create_unique_value_dict(series_name, clean_type,
+                                                    faker_type, trunc_length,
+                                                    trunc_from_end)
         new_series = self._pd_obj[series_name].replace(value_dict)
         return new_series
 
-    def clean_dataframe(self, list_of_clean_series_dicts: List[Dict[str, Union[str, int, bool, None]]]) -> pd.DataFrame:
+    def clean_dataframe(self,
+                        list_of_clean_series_dicts: List[
+                            Dict[str,
+                                 Union[str, int, bool, None]]
+                        ]) -> pd.DataFrame:
         """
-        Convenience method that, given a list of dictionaries representing the parameters for clean series,
+        Convenience method that, given a list of dictionaries representing the
+        parameters for clean series,
         this method will call clean_series with the given parameters
 
         Args:
-            list_of_clean_series_dicts: List of dictionaries with the params that can be unpacked into clean_series
+            list_of_clean_series_dicts: List of dictionaries with the params
+            that can be unpacked into clean_series
 
         Returns:
             Pandas DataFrame with the cleaned series values
@@ -158,8 +228,10 @@ class CleanPandas:
 
         for params_dict in list_of_clean_series_dicts:
             try:
-                clean_pd_obj[params_dict['series_name']] = self.clean_series(**params_dict)
-            except (KeyError, UnknownCleanType):
+                clean_pd_obj[
+                    params_dict['series_name']
+                ] = self.clean_series(**params_dict)
+            except (KeyError, UnknownCleanType):  # pragma: no cover
                 continue
 
         return clean_pd_obj
