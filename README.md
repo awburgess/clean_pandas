@@ -7,6 +7,12 @@ Pandas accessor for replacing, removing, or encrypting a DataFrame or Series tha
 * [Scrubadub](https://github.com/datascopeanalytics/scrubadub)
 * [cryptography](https://github.com/pyca/cryptography)
 
+## Installation
+
+```python
+pip install clean_pandas
+```
+
 ## Clean Type Options
 
 * ```encrypt``` (default) - Utilizes the [cryptography](https://github.com/pyca/cryptography) library and uses Fernet (symmetric encryption)
