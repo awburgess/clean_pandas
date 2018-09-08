@@ -208,3 +208,28 @@ def test_clean_dataframe_names_email_ssn() -> NoReturn:
     assert (clean_df.merge(test_df, on='email', how='inner')).shape[0] == 0
     assert all([isinstance(value, bytes) for value in clean_df.street_address])
     assert all([len(value) <= 5 for value in clean_df.ssn])
+
+
+def test_decrypt_series() -> NoReturn:
+    """
+    Assert that a decrypted series is returned as the correct dtype
+
+    """
+    test_df = test_data()
+
+    ssn_dtype = test_df.ssn.iloc[0]  # str
+    some_id_dtype = test_df.some_id.iloc[0]  # int
+
+    test_df['ssn'] = test_df.clean_pandas.clean_series('ssn')
+    test_df['some_id'] = test_df.clean_pandas.clean_series('some_id')
+
+    assert isinstance(test_df.ssn.iloc[0], bytes)
+    assert isinstance(test_df.some_id.iloc[0], bytes)
+
+    test_df['ssn'] = test_df.clean_pandas.decrypt_series('ssn')
+    test_df['some_id'] = test_df.clean_pandas.decrypt_series('some_id')
+
+    assert test_df.ssn.iloc[0] == ssn_dtype
+    assert test_df.some_id.iloc[0] == some_id_dtype
+
+

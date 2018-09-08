@@ -18,11 +18,12 @@ class UnknownCleanType(Exception):
 
 @pd.api.extensions.register_dataframe_accessor('clean_pandas')
 class CleanPandas:
-    def __init__(self, pandas_object: Union[pd.DataFrame]):
+    def __init__(self, pandas_object: Union[pd.DataFrame, pd.Series]):
         self._pd_obj = pandas_object
         self._key = Fernet.generate_key()
         self._fernet = Fernet(self._key)
         self._faker = Faker()
+        self._dataframe_dtypes: dict = self._pd_obj.dtypes.to_dict()
 
     @staticmethod
     def get_faker_types() -> NoReturn:  # pragma: no cover
@@ -45,6 +46,26 @@ class CleanPandas:
             An encrypted bytes object
         """
         return self._fernet.encrypt(str(value).encode())
+
+    def _decrypt_value(self, value: Any, series_name: str, dtype: Any = None) -> Any:
+        """
+        Take an encrypted value and return the original value
+
+        Args:
+            value: Incoming, encrypted value from Pandas Series
+            series_name: The name of the series being decrypted
+            dtype: User specified dtype object,
+                   only use if you do not want to use the original dtype value on the dataframe
+
+        Returns:
+            A decrypted value that is cast to it's series original data
+        """
+        if not isinstance(value, bytes):
+            raise ValueError("Expected bytes, encountered %s" % type(value))
+        decrypted_value = self._fernet.decrypt(value).decode('utf-8')
+        if not dtype:
+            return self._dataframe_dtypes[series_name].type(decrypted_value)
+        return dtype.type(decrypted_value)
 
     def _fake_value(self, faker_type: str) -> Any:
         """
@@ -147,9 +168,8 @@ class CleanPandas:
             elif clean_type == 'scrubadub':
                 new_value = self._scrubabdub(value)
             else:
-                print(clean_type)
                 raise UnknownCleanType("Clean type must be 'encrypt', "
-                                       "'scrubadub', 'faker', or 'truncate'")
+                                       "'scrubadub', 'faker', or 'truncate'. Given %s" % clean_type)
 
             replacement_xwalk_dict[value] = new_value
 
@@ -158,6 +178,7 @@ class CleanPandas:
     def serialize_encryption_key(self,
                                  outpath: str) -> NoReturn:  # pragma: no cover
         """
+        Serialize the encryption key used by this accessor instance
 
         Args:
             outpath: String representation of path for serialization
@@ -167,6 +188,22 @@ class CleanPandas:
         """
         with open(outpath, 'wb') as outfile:
             outfile.write(self._key)
+
+    def decrypt_series(self, series_name: str, dtype: Any = None) -> pd.Series:
+        """
+        Decrypt a series that has been encrypted
+
+        Args:
+            series_name: Name of series
+
+        Keyword Args:
+            dtype: Pandas dtype object that will be used to cast the decrypted string, will use original dtype
+                   of series
+
+        Returns:
+            Pandas series
+        """
+        return self._pd_obj[series_name].apply(lambda x: self._decrypt_value(x, series_name, dtype))
 
     def add_faker_provider(self, provider_object: BaseProvider) -> NoReturn:
         """
