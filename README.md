@@ -52,6 +52,20 @@ Name: ssn, dtype: object
 1    6789
 Name: ssn, dtype: object
 
+
+# Decrypt a series
+>>> test_df['some_id'] = test_df.clean_pandas.clean_series('ssn')  # encrypt
+>>> test_df.some_id
+0    b'gAAAAABblA1SIGqKbTC97RjEibmB4FBHnXqKVocvFMg4...
+1    b'gAAAAABblA1Sc_StggFPj0zmQLUVo0ADqHQtljUEGcr0...
+Name: some_id, dtype: object
+
+# Automatically casts back to original dtype with optional dtype argument
+>>> test_df.clean_pandas.decrypt_series('some_id')
+0    1
+1    2
+Name: some_id, dtype: int64
+
 ```
 
 ## Batch Clean

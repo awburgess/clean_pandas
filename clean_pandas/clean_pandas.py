@@ -62,10 +62,10 @@ class CleanPandas:
         """
         if not isinstance(value, bytes):
             raise ValueError("Expected bytes, encountered %s" % type(value))
-        decrypted_value = self._fernet.decrypt(value)
-        if dtype:
+        decrypted_value = self._fernet.decrypt(value).decode('utf-8')
+        if not dtype:
             return self._dataframe_dtypes[series_name].type(decrypted_value)
-        return decrypted_value
+        return dtype.type(decrypted_value)
 
     def _fake_value(self, faker_type: str) -> Any:
         """
@@ -178,6 +178,7 @@ class CleanPandas:
     def serialize_encryption_key(self,
                                  outpath: str) -> NoReturn:  # pragma: no cover
         """
+        Serialize the encryption key used by this accessor instance
 
         Args:
             outpath: String representation of path for serialization
@@ -188,16 +189,21 @@ class CleanPandas:
         with open(outpath, 'wb') as outfile:
             outfile.write(self._key)
 
-    def decrypt_series(self, series_name: str, dtype: Any = None):
+    def decrypt_series(self, series_name: str, dtype: Any = None) -> pd.Series:
         """
         Decrypt a series that has been encrypted
+
         Args:
-            series_name:
-            dtype:
+            series_name: Name of series
+
+        Keyword Args:
+            dtype: Pandas dtype object that will be used to cast the decrypted string, will use original dtype
+                   of series
 
         Returns:
-
+            Pandas series
         """
+        return self._pd_obj[series_name].apply(lambda x: self._decrypt_value(x, series_name, dtype))
 
     def add_faker_provider(self, provider_object: BaseProvider) -> NoReturn:
         """
