@@ -30,8 +30,7 @@ def test_ssn_clean_series_faker() -> NoReturn:
     """
     test_df = test_data()
 
-    fake_values = test_df.clean_pandas.clean_series('ssn', clean_type='faker',
-                                                    faker_type='ssn').tolist()
+    fake_values = test_df.clean_pandas.fake_it('ssn', faker_type='ssn').ssn.tolist()
 
     for value in test_df.ssn.values:
         assert value not in fake_values
@@ -44,8 +43,8 @@ def test_ssn_clean_series_encrypt() -> NoReturn:
     """
     test_df = test_data()
 
-    encrypted_values = test_df.clean_pandas.clean_series(
-        'ssn', clean_type='encrypt').tolist()
+    encrypted_values = test_df.clean_pandas.encrypt(
+        'ssn').ssn.tolist()
 
     assert all([isinstance(val, bytes) for val in encrypted_values])
 
@@ -57,9 +56,7 @@ def test_ssn_clean_series_truncate() -> NoReturn:
     """
     test_df = test_data()
 
-    truncated_values = test_df.clean_pandas.clean_series('ssn',
-                                                         clean_type='truncate',
-                                                         trunc_length=5)
+    truncated_values = test_df.clean_pandas.truncate('ssn', trunc_length=5).ssn
 
     assert all([len(val) != 11 for val in truncated_values])
 
@@ -71,9 +68,7 @@ def test_dob_clean_series_faker() -> NoReturn:
     """
     test_df = test_data()
 
-    fake_dates = test_df.clean_pandas.clean_series('dob',
-                                                   clean_type='faker',
-                                                   faker_type='date_time')
+    fake_dates = test_df.clean_pandas.fake_it('dob', faker_type='date_time').dob
 
     assert all([isinstance(d, datetime) for d in fake_dates])
 
@@ -85,10 +80,7 @@ def test_dob_clean_series_truncate() -> NoReturn:
     """
     test_df = test_data()
 
-    truncated_values = test_df.clean_pandas.clean_series('dob',
-                                                         clean_type='truncate',
-                                                         trunc_length=4,
-                                                         trunc_from_end=False)
+    truncated_values = test_df.clean_pandas.truncate('dob', trunc_length=4, trunc_from_end=False).dob
 
     assert all([val.startswith('-') for val in truncated_values.tolist()])
 
@@ -100,9 +92,7 @@ def test_postal_clean_series_faker() -> NoReturn:
     """
     test_df = test_data()
 
-    fake_values = test_df.clean_pandas.clean_series('postal',
-                                                    clean_type='faker',
-                                                    faker_type='zipcode')
+    fake_values = test_df.clean_pandas.fake_it('postal', faker_type='zipcode').postal
 
     for value in test_df.postal.values:
         assert value not in fake_values
@@ -115,9 +105,9 @@ def test_first_name_clean_series_scrubadub() -> NoReturn:
     """
     test_df = test_data()
 
-    scrubbed_first_name = test_df.clean_pandas.clean_series(
-        'first_name', clean_type='scrubadub'
-    )
+    scrubbed_first_name = test_df.clean_pandas.scrub_it(
+        'first_name'
+    ).first_name
 
     assert scrubbed_first_name.unique() == '{{NAME}}'
 
@@ -129,9 +119,8 @@ def test_last_name_clean_series_scrubadub() -> NoReturn:
     """
     test_df = test_data()
 
-    scrubbed_last_name = test_df.clean_pandas.clean_series(
-        'last_name',
-        clean_type='scrubadub')
+    scrubbed_last_name = test_df.clean_pandas.scrub_it(
+        'last_name').last_name
 
     assert scrubbed_last_name.unique() == '{{NAME}}'
 
@@ -143,9 +132,7 @@ def test_ssn_clean_series_scrubadub() -> NoReturn:
     """
     test_df = test_data()
 
-    scrubbed_ssn = test_df.clean_pandas.clean_series('ssn',
-                                                     clean_type='scrubadub')\
-        .unique()
+    scrubbed_ssn = test_df.clean_pandas.scrub_it('ssn').ssn.unique()
 
     assert '{{SSN}}' in scrubbed_ssn
     # We have malformed SSN in the data, so Scrubadub picks
@@ -161,9 +148,7 @@ def test_some_id_clean_series_truncate_too_much() -> NoReturn:
     """
     test_df = test_data()
 
-    series_test = test_df.clean_pandas.clean_series('some_id',
-                                                    clean_type='truncate',
-                                                    trunc_length=4)
+    series_test = test_df.clean_pandas.truncate('some_id', trunc_length=4).some_id
 
     assert series_test.dtype.type == np.object_
 
@@ -176,38 +161,11 @@ def test_income_clean_series_truncate() -> NoReturn:
     """
     test_df = test_data()
 
-    income_clean_series = test_df.clean_pandas.clean_series(
+    income_clean_series = test_df.clean_pandas.truncate(
         'income',
-        clean_type='truncate',
-        trunc_length=3)
+        trunc_length=3).income
 
     assert income_clean_series.dtypes.type == np.int64
-
-
-def test_clean_dataframe_names_email_ssn() -> NoReturn:
-    """
-    Assert that, given a parameter list, the clean dataframe method
-    cleans the series correctly
-
-    """
-    test_df = test_data()
-
-    params_list_of_dicts = [
-        {'series_name': 'first_name', 'clean_type': 'scrubadub'},
-        {'series_name': 'last_name', 'clean_type': 'scrubadub'},
-        {'series_name': 'email', 'clean_type': 'faker', 'faker_type': 'email'},
-        {'series_name': 'street_address', 'clean_type': 'encrypt'},
-        {'series_name': 'ssn', 'clean_type': 'truncate', 'trunc_length': 7,
-         'trunc_from_end': False}
-    ]
-
-    clean_df = test_df.clean_pandas.clean_dataframe(params_list_of_dicts)
-
-    assert clean_df.first_name.unique() == '{{NAME}}'
-    assert clean_df.last_name.unique() == '{{NAME}}'
-    assert (clean_df.merge(test_df, on='email', how='inner')).shape[0] == 0
-    assert all([isinstance(value, bytes) for value in clean_df.street_address])
-    assert all([len(value) <= 5 for value in clean_df.ssn])
 
 
 def test_decrypt_series() -> NoReturn:
@@ -220,16 +178,14 @@ def test_decrypt_series() -> NoReturn:
     ssn_dtype = test_df.ssn.iloc[0]  # str
     some_id_dtype = test_df.some_id.iloc[0]  # int
 
-    test_df['ssn'] = test_df.clean_pandas.clean_series('ssn')
-    test_df['some_id'] = test_df.clean_pandas.clean_series('some_id')
+    encrypt_df = test_df.clean_pandas.encrypt(['ssn', 'some_id'])
 
-    assert isinstance(test_df.ssn.iloc[0], bytes)
-    assert isinstance(test_df.some_id.iloc[0], bytes)
+    assert isinstance(encrypt_df.ssn.iloc[0], bytes)
+    assert isinstance(encrypt_df.some_id.iloc[0], bytes)
 
-    test_df['ssn'] = test_df.clean_pandas.decrypt_series('ssn')
-    test_df['some_id'] = test_df.clean_pandas.decrypt_series('some_id')
+    decrypt_df = encrypt_df.clean_pandas.decrypt(['ssn', 'some_id'])
 
-    assert test_df.ssn.iloc[0] == ssn_dtype
-    assert test_df.some_id.iloc[0] == some_id_dtype
+    assert decrypt_df.ssn.iloc[0] == ssn_dtype
+    assert decrypt_df.some_id.iloc[0] == some_id_dtype
 
 
