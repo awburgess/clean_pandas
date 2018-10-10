@@ -1,4 +1,4 @@
-from typing import Dict, Union, Any, List, NoReturn
+from typing import Tuple, Union, Any, List, NoReturn
 import webbrowser
 import warnings
 
@@ -35,6 +35,18 @@ class CleanPandas:
         """
         webbrowser.open('https://faker.readthedocs.io/en/latest/providers.html')
 
+    def _process_columns(self, columns: Union[str, List[str]]) -> List[str]:
+        """
+        Given the possibility of either being a string or a list, ensure a list is always provided
+
+        Args:
+            columns: String or list of strings representing columns
+
+        Returns:
+            List of column names as strings
+        """
+        return [columns] if isinstance(columns, str) else columns
+
     def _encrypt_value(self, value: Any) -> bytes:
         """
         Take an input value, convert to bytes, and encrypt as bytes
@@ -47,13 +59,14 @@ class CleanPandas:
         """
         return self._fernet.encrypt(str(value).encode())
 
-    def _decrypt_value(self, value: Any, series_name: str, dtype: Any = None) -> Any:
+    def _decrypt_value(self, value: Any, series_name: str, key: bytes, dtype: Any = None) -> Any:
         """
         Take an encrypted value and return the original value
 
         Args:
             value: Incoming, encrypted value from Pandas Series
             series_name: The name of the series being decrypted
+            key: Bytes object representing encryption key
             dtype: User specified dtype object,
                    only use if you do not want to use the original dtype value on the dataframe
 
@@ -62,9 +75,12 @@ class CleanPandas:
         """
         if not isinstance(value, bytes):
             raise ValueError("Expected bytes, encountered %s" % type(value))
-        decrypted_value = self._fernet.decrypt(value).decode('utf-8')
+        f = Fernet(key)
+        decrypted_value = f.decrypt(value).decode('utf-8')
         if not dtype:
-            return self._dataframe_dtypes[series_name].type(decrypted_value)
+            return decrypted_value
+        elif isinstance(dtype, dict):
+            return dtype[series_name].type(decrypted_value)
         return dtype.type(decrypted_value)
 
     def _fake_value(self, faker_type: str) -> Any:
@@ -131,50 +147,6 @@ class CleanPandas:
             return value
         return scrubadub.clean(str_value)
 
-    def _create_unique_value_dict(self, column_name: str,
-                                  clean_type: str,
-                                  faker_type: str,
-                                  trunc_length: int = 0,
-                                  trunc_from_end=True) -> Dict[Any, Any]:
-        """
-        Take the unique values in a series and perform the desired cleaning
-        operations
-
-        Args:
-            clean_type: String indicating 'encrypt', 'replace', 'truncate',
-                        'scrubadub'
-            faker_type: String indicating faker provider to use
-            trunc_length: Used if clean_type is 'truncate', indicates how many
-                          characters to remove
-            trunc_from_end: Truncate from the end, will truncate from the start
-                            if False
-
-        Returns:
-            Dictionary with unique values as keys and replacement values as
-            dictionary values
-        """
-        replacement_xwalk_dict = {}
-
-        for value in self._pd_obj[column_name].unique():
-            if clean_type == 'encrypt':
-                new_value = self._encrypt_value(value)
-            elif clean_type == 'faker':
-                new_value = self._fake_value(faker_type)
-            elif clean_type == 'truncate':
-                new_value = self._truncate_value(
-                    value,
-                    self._pd_obj[column_name].dtype.type,
-                    trunc_length, trunc_from_end)
-            elif clean_type == 'scrubadub':
-                new_value = self._scrubabdub(value)
-            else:
-                raise UnknownCleanType("Clean type must be 'encrypt', "
-                                       "'scrubadub', 'faker', or 'truncate'. Given %s" % clean_type)
-
-            replacement_xwalk_dict[value] = new_value
-
-        return replacement_xwalk_dict
-
     def serialize_encryption_key(self,
                                  outpath: str) -> NoReturn:  # pragma: no cover
         """
@@ -189,22 +161,6 @@ class CleanPandas:
         with open(outpath, 'wb') as outfile:
             outfile.write(self._key)
 
-    def decrypt_series(self, series_name: str, dtype: Any = None) -> pd.Series:
-        """
-        Decrypt a series that has been encrypted
-
-        Args:
-            series_name: Name of series
-
-        Keyword Args:
-            dtype: Pandas dtype object that will be used to cast the decrypted string, will use original dtype
-                   of series
-
-        Returns:
-            Pandas series
-        """
-        return self._pd_obj[series_name].apply(lambda x: self._decrypt_value(x, series_name, dtype))
-
     def add_faker_provider(self, provider_object: BaseProvider) -> NoReturn:
         """
         Add a faker provider object for use in Clean Pandas accessor
@@ -218,57 +174,98 @@ class CleanPandas:
         """
         self._faker.add_provider(provider_object)  # pragma: no cover
 
-    def clean_series(self, series_name: str, clean_type: str = 'encrypt',
-                     faker_type: Union[str, None] = None,
-                     trunc_length: int=0,
-                     trunc_from_end: bool = True) -> pd.Series:
+    def encrypt(self, columns: Union[str, List[str]]) -> Tuple[pd.DataFrame, bytes, dict]:
         """
-        Takes the unique values in a given series, applies the clean_type
-        and replaces all values in the
-        given series with the new "clean" values
+        Apply Fermet encryption to provided columns creating bytes objects
 
         Args:
-            series_name: Pandas series name
-            clean_type: 'encrypt', scrubadub', 'faker', 'truncate' are options
-            faker_type: Faker provider type to use
-            trunc_length: Length of characters to truncate
-            trunc_from_end: Boolean that indicates if truncation should start
-                            from the end, defaults to True
+            columns: String or list of strings representing columns to apply encryption
 
         Returns:
-            Returns new Series with updated values
+            Pandas DataFrame
         """
-        value_dict = self._create_unique_value_dict(series_name, clean_type,
-                                                    faker_type, trunc_length,
-                                                    trunc_from_end)
-        new_series = self._pd_obj[series_name].replace(value_dict)
-        return new_series
+        processed_columns = self._process_columns(columns)
+        new_df = self._pd_obj.copy()
+        for column in processed_columns:
+            replacement_values = {value: self._encrypt_value(value) for value in new_df[column].unique()}
+            new_df[column] = new_df[column].replace(replacement_values)
+        return new_df, self._key, {k: v for k, v in self._dataframe_dtypes.items() if k in columns}
 
-    def clean_dataframe(self,
-                        list_of_clean_series_dicts: List[
-                            Dict[str,
-                                 Union[str, int, bool, None]]
-                        ]) -> pd.DataFrame:
+    def decrypt(self, columns: Union[str, List[str]], key: bytes, dtype: Any = None) -> pd.DataFrame:
         """
-        Convenience method that, given a list of dictionaries representing the
-        parameters for clean series,
-        this method will call clean_series with the given parameters
+        Decrypt a series that has been encrypted
 
         Args:
-            list_of_clean_series_dicts: List of dictionaries with the params
-            that can be unpacked into clean_series
+            columns: String or list of strings representing columns to apply encryption
+
+        Keyword Args:
+            dtype: Pandas dtype object or dictionary of columns and dtypes that will be used to cast the decrypted string;
+                 if None then value will be returned as decrypted
+            key: Bytes object representing encryption key
 
         Returns:
-            Pandas DataFrame with the cleaned series values
+            Pandas DataFrame
         """
-        clean_pd_obj = self._pd_obj.copy()
+        processed_columns = self._process_columns(columns)
+        for column in processed_columns:
+            replacement_values = {value: self._decrypt_value(value, column, key, dtype) for value in self._pd_obj[column].unique()}
+            self._pd_obj[column] = self._pd_obj[column].replace(replacement_values)
+        return self._pd_obj
 
-        for params_dict in list_of_clean_series_dicts:
-            try:
-                clean_pd_obj[
-                    params_dict['series_name']
-                ] = self.clean_series(**params_dict)
-            except (KeyError, UnknownCleanType):  # pragma: no cover
-                continue
+    def fake_it(self, columns: Union[str, List[str]], faker_type: str) -> pd.DataFrame:
+        """
+        Apply the Faker library to the provided columns by creating dummy values
 
-        return clean_pd_obj
+        Args:
+            columns: String or list of strings representing columns to apply Faker
+            faker_type: The Faker provider type to apply
+
+        Returns:
+            Pandas DataFrame
+        """
+        processed_columns = self._process_columns(columns)
+        new_df = self._pd_obj.copy()
+        for column in processed_columns:
+            replacement_values = {value: self._fake_value(faker_type) for value in new_df[column].unique()}
+            new_df[column] = new_df[column].replace(replacement_values)
+        return new_df
+
+    def truncate(self, columns: Union[str, List[str]], trunc_length: int, trunc_from_end: bool = True) -> pd.DataFrame:
+        """
+        Truncate the provided columns by a certain number of characters and from the end or beginning of string
+
+        Args:
+            columns: String or list of strings representing columns to apply Faker
+            trunc_length: Total characters to truncate
+
+        Keyword Args:
+            trunc_from_end: Boolean with True meaning start from end of word
+
+        Returns:
+            Pandas DataFrame
+        """
+        processed_columns = self._process_columns(columns)
+        new_df = self._pd_obj.copy()
+        for column in processed_columns:
+            dtype = new_df[column].dtype.type
+            replacement_values = {value: self._truncate_value(value, dtype, trunc_length, trunc_from_end) for value
+                                  in new_df[column].unique()}
+            new_df[column] = new_df[column].replace(replacement_values)
+        return new_df
+
+    def scrub_it(self, columns: Union[str, List[str]]) -> pd.DataFrame:
+        """
+        Apply the Scrubadub library against the given columns
+
+        Args:
+            columns: String or list of strings representing columns to apply Faker
+
+        Returns:
+            Pandas DataFrame
+        """
+        processed_columns = self._process_columns(columns)
+        new_df = self._pd_obj.copy()
+        for column in processed_columns:
+            replacement_values = {value: self._scrubabdub(value) for value in new_df[column].unique()}
+            new_df[column] = new_df[column].replace(replacement_values)
+        return new_df
