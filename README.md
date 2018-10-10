@@ -55,7 +55,7 @@ Name: ssn, dtype: object
 
 
 # Decrypt a series
->>> result_df, encryption_key, dtype_dict = test_df['some_id'] = test_df.clean_pandas.clean_series('ssn')  # encrypt
+>>> result_df, encryption_key, dtype_dict = test_df.clean_pandas.encrypt('ssn')  # encrypt
 >>> test_df.some_id
 0    b'gAAAAABblA1SIGqKbTC97RjEibmB4FBHnXqKVocvFMg4...
 1    b'gAAAAABblA1Sc_StggFPj0zmQLUVo0ADqHQtljUEGcr0...
