@@ -43,8 +43,10 @@ def test_ssn_clean_series_encrypt() -> NoReturn:
     """
     test_df = test_data()
 
-    encrypted_values = test_df.clean_pandas.encrypt(
-        'ssn').ssn.tolist()
+    encrypted_df, key, dtype_dict = test_df.clean_pandas.encrypt(
+        'ssn')
+
+    encrypted_values = encrypted_df.ssn.values.tolist()
 
     assert all([isinstance(val, bytes) for val in encrypted_values])
 
@@ -178,12 +180,12 @@ def test_decrypt_series() -> NoReturn:
     ssn_dtype = test_df.ssn.iloc[0]  # str
     some_id_dtype = test_df.some_id.iloc[0]  # int
 
-    encrypt_df = test_df.clean_pandas.encrypt(['ssn', 'some_id'])
+    encrypt_df, key, dtype_dict = test_df.clean_pandas.encrypt(['ssn', 'some_id'])
 
     assert isinstance(encrypt_df.ssn.iloc[0], bytes)
     assert isinstance(encrypt_df.some_id.iloc[0], bytes)
 
-    decrypt_df = encrypt_df.clean_pandas.decrypt(['ssn', 'some_id'])
+    decrypt_df = encrypt_df.clean_pandas.decrypt(['ssn', 'some_id'], key, dtype_dict)
 
     assert decrypt_df.ssn.iloc[0] == ssn_dtype
     assert decrypt_df.some_id.iloc[0] == some_id_dtype

@@ -1,4 +1,4 @@
-from typing import Dict, Union, Any, List, NoReturn
+from typing import Tuple, Union, Any, List, NoReturn
 import webbrowser
 import warnings
 
@@ -59,13 +59,14 @@ class CleanPandas:
         """
         return self._fernet.encrypt(str(value).encode())
 
-    def _decrypt_value(self, value: Any, series_name: str, dtype: Any = None) -> Any:
+    def _decrypt_value(self, value: Any, series_name: str, key: bytes, dtype: Any = None) -> Any:
         """
         Take an encrypted value and return the original value
 
         Args:
             value: Incoming, encrypted value from Pandas Series
             series_name: The name of the series being decrypted
+            key: Bytes object representing encryption key
             dtype: User specified dtype object,
                    only use if you do not want to use the original dtype value on the dataframe
 
@@ -74,9 +75,12 @@ class CleanPandas:
         """
         if not isinstance(value, bytes):
             raise ValueError("Expected bytes, encountered %s" % type(value))
-        decrypted_value = self._fernet.decrypt(value).decode('utf-8')
+        f = Fernet(key)
+        decrypted_value = f.decrypt(value).decode('utf-8')
         if not dtype:
-            return self._dataframe_dtypes[series_name].type(decrypted_value)
+            return decrypted_value
+        elif isinstance(dtype, dict):
+            return dtype[series_name].type(decrypted_value)
         return dtype.type(decrypted_value)
 
     def _fake_value(self, faker_type: str) -> Any:
@@ -170,7 +174,7 @@ class CleanPandas:
         """
         self._faker.add_provider(provider_object)  # pragma: no cover
 
-    def encrypt(self, columns: Union[str, List[str]]) -> pd.DataFrame:
+    def encrypt(self, columns: Union[str, List[str]]) -> Tuple[pd.DataFrame, bytes, dict]:
         """
         Apply Fermet encryption to provided columns creating bytes objects
 
@@ -185,9 +189,9 @@ class CleanPandas:
         for column in processed_columns:
             replacement_values = {value: self._encrypt_value(value) for value in new_df[column].unique()}
             new_df[column] = new_df[column].replace(replacement_values)
-        return new_df
+        return new_df, self._key, {k: v for k, v in self._dataframe_dtypes.items() if k in columns}
 
-    def decrypt(self, columns: Union[str, List[str]], dtype: Any = None) -> pd.DataFrame:
+    def decrypt(self, columns: Union[str, List[str]], key: bytes, dtype: Any = None) -> pd.DataFrame:
         """
         Decrypt a series that has been encrypted
 
@@ -195,16 +199,17 @@ class CleanPandas:
             columns: String or list of strings representing columns to apply encryption
 
         Keyword Args:
-            dtype: Pandas dtype object that will be used to cast the decrypted string, will use original dtype
-                   of series
+            dtype: Pandas dtype object or dictionary of columns and dtypes that will be used to cast the decrypted string;
+                 if None then value will be returned as decrypted
+            key: Bytes object representing encryption key
 
         Returns:
             Pandas DataFrame
         """
         processed_columns = self._process_columns(columns)
         for column in processed_columns:
-            replacement_values = {value: self._decrypt_value(value, column, dtype) for value in self._pd_obj[column].unique()}
-            self._pd_obj[column] = self._pd_obj[column].apply()
+            replacement_values = {value: self._decrypt_value(value, column, key, dtype) for value in self._pd_obj[column].unique()}
+            self._pd_obj[column] = self._pd_obj[column].replace(replacement_values)
         return self._pd_obj
 
     def fake_it(self, columns: Union[str, List[str]], faker_type: str) -> pd.DataFrame:

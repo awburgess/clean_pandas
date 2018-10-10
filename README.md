@@ -32,51 +32,41 @@ pip install clean_pandas
                             "last_name": ["Darwin", "Hawking"], 
                             "ssn": ["555-55-5555", "123-45-6789"]})
 
->>> test_df.clean_pandas.clean_series('ssn')
+>>> result_df, encryption_key, dtype_dict = test_df.clean_pandas.encrypt('ssn')
+>>> result_df['ssn']
 0    b'gAAAAABbextrtJcQfOt37HK7pEISBokuh9ndWwGhvZpv...
 1    b'gAAAAABbextrHo7qFr6DIZ0FlvVyO73HOmOYujKsv6vS...
 Name: ssn, dtype: object
 
->>> test_df.clean_pandas.clean_series('last_name', clean_type='faker', faker_type='first_name')
+>>> test_df.clean_pandas.fake_it('last_name', faker_type='first_name')['last_name']
 0     Joshua
 1    Michael
 Name: last_name, dtype: object
 
->>> test_df.clean_pandas.clean_series('ssn', clean_type='scrubadub')
+>>> test_df.clean_pandas.scrub_it('ssn')['ssn']
 0    {{SSN}}
 1    {{SSN}}
 Name: ssn, dtype: object
 
->>> test_df.clean_pandas.clean_series('ssn', clean_type='truncate', trunc_length=7, trunc_from_end=False)
+>>> test_df.clean_pandas.truncate('ssn', trunc_length=7, trunc_from_end=False)['ssn']
 0    5555
 1    6789
 Name: ssn, dtype: object
 
 
 # Decrypt a series
->>> test_df['some_id'] = test_df.clean_pandas.clean_series('ssn')  # encrypt
+>>> result_df, encryption_key, dtype_dict = test_df['some_id'] = test_df.clean_pandas.clean_series('ssn')  # encrypt
 >>> test_df.some_id
 0    b'gAAAAABblA1SIGqKbTC97RjEibmB4FBHnXqKVocvFMg4...
 1    b'gAAAAABblA1Sc_StggFPj0zmQLUVo0ADqHQtljUEGcr0...
 Name: some_id, dtype: object
 
 # Automatically casts back to original dtype with optional dtype argument
->>> test_df.clean_pandas.decrypt_series('some_id')
+>>> result_df.clean_pandas.decrypt('some_id', encryption_key, dtype_dict)['some_id']
 0    1
 1    2
 Name: some_id, dtype: int64
 
-```
-
-## Batch Clean
-
-```python
->>> cleaner_params = [{'series_name': 'last_name', 'clean_type': 'faker', 'faker_type': 'last_name'}, {'series_name': 'ssn', 'clean_type': 'scrubadub'}]
-
->>> test_df.clean_pandas.clean_dataframe(cleaner_params)
-  first_name last_name      ssn
-0    Charles   Pacheco  {{SSN}}
-1    Stephen     Hogan  {{SSN}}
 ```
 
 ## License
